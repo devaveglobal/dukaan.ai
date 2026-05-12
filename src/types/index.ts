@@ -2,6 +2,21 @@ export type UserRole = "seller" | "admin";
 export type PaymentStatus = "paid" | "pending" | "partial";
 export type IncompleteSaleStatus = "pending_admin_review" | "resolved" | "dismissed";
 
+export interface IncompleteSaleReview {
+  id: string;
+  seller_id: string;
+  raw_message: string;
+  extracted_data: Record<string, unknown>;
+  status: IncompleteSaleStatus;
+  admin_comment?: string | null;
+  resolved_quantity?: number | null;
+  resolved_price?: number | null;
+  resolved_item_id?: string | null;
+  resolved_sale_id?: string | null;
+  created_at: string;
+  seller?: { full_name: string; email: string; branch?: string };
+}
+
 export interface Profile {
   id: string;
   email: string;

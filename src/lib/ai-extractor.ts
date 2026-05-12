@@ -74,6 +74,34 @@ Input: "5 pani ki botlein 100 mein"
 Output: {"intent":"log_sale","items":[{"raw_name":"water bottle","quantity":5,"unit_price":20,"total_price":100,"confidence":0.9}],"customer_name":null,"payment_status":"paid","total_amount":100,"confidence":0.9,"is_complete":true,"missing_fields":[]}
 `;
 
+export async function detectItemFromImage(imageBase64: string): Promise<string | null> {
+  const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
+      "HTTP-Referer": process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000",
+      "X-Title": "AI Sales Barcode",
+    },
+    body: JSON.stringify({
+      model: "anthropic/claude-3.5-haiku",
+      max_tokens: 60,
+      temperature: 0.1,
+      messages: [{
+        role: "user",
+        content: [
+          { type: "image_url", image_url: { url: imageBase64 } },
+          { type: "text", text: "Look at this product/barcode image. Reply with ONLY the product name in English, nothing else. If you cannot identify it, reply with 'unknown'." },
+        ],
+      }],
+    }),
+  });
+  if (!response.ok) return null;
+  const result = await response.json();
+  const name = (result.choices[0].message.content as string).trim();
+  return name === "unknown" ? null : name;
+}
+
 export async function extractSaleData(message: string): Promise<ExtractedSaleData> {
   const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",

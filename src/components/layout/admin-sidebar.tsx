@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, MessageSquare, Receipt, Settings, Users, LogOut, Package } from "lucide-react";
+import { LayoutDashboard, MessageSquare, Receipt, Settings, Users, LogOut, Package, ClipboardList } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ const links = [
   { href: "/admin/chat", label: "AI Assistant", icon: MessageSquare },
   { href: "/admin/items", label: "Items", icon: Package },
   { href: "/admin/receipts", label: "All Receipts", icon: Receipt },
+  { href: "/admin/reviews", label: "Reviews", icon: ClipboardList },
   { href: "/admin/sellers", label: "Sellers", icon: Users },
   { href: "/admin/settings", label: "Settings", icon: Settings },
 ];

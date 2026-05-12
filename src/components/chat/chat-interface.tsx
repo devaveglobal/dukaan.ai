@@ -2,13 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import { processChatMessage, loadConversation } from "@/actions/chat";
+import { detectItemFromImage } from "@/lib/ai-extractor";
 import { ChatMessage } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Send, Loader2, Bot, User, CheckCircle2, Clock, AlertCircle, Mic, MicOff } from "lucide-react";
+import { Send, Loader2, Bot, User, CheckCircle2, Clock, AlertCircle, Mic, MicOff, ImagePlus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -21,29 +22,14 @@ export default function ChatInterface({ userId, role }: Props) {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [lastAction, setLastAction] = useState<string | null>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const recognitionRef = useRef<SpeechRecognition | null>(null);
   const [listening, setListening] = useState(false);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [detectedItem, setDetectedItem] = useState<string | null>(null);
+  const [detectingImage, setDetectingImage] = useState(false);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const recognitionRef = useRef<InstanceType<typeof window.SpeechRecognition> | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const toggleVoice = () => {
-    if (listening) {
-      recognitionRef.current?.stop();
-      return;
-    }
-    const SR = window.SpeechRecognition ?? window.webkitSpeechRecognition;
-    if (!SR) { toast.error("Voice not supported in this browser"); return; }
-    const rec = new SR();
-    rec.lang = "en-US";
-    rec.interimResults = false;
-    rec.onresult = (e) => setInput((prev) => prev + e.results[0][0].transcript);
-    rec.onerror = () => { toast.error("Voice recognition error"); setListening(false); };
-    rec.onend = () => setListening(false);
-    recognitionRef.current = rec;
-    rec.start();
-    setListening(true);
-  };
-
-  // Load today's conversation on mount
   useEffect(() => {
     loadConversation(userId).then((msgs) => {
       if (msgs.length > 0) setMessages(msgs);
@@ -53,6 +39,57 @@ export default function ChatInterface({ userId, role }: Props) {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  const toggleVoice = () => {
+    if (listening) { recognitionRef.current?.stop(); return; }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const SR = (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition;
+    if (!SR) { toast.error("Voice not supported in this browser"); return; }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rec = new SR() as any;
+    rec.lang = "en-US";
+    rec.interimResults = false;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    rec.onresult = (e: any) => setInput((prev) => prev + e.results[0][0].transcript);
+    rec.onerror = () => { toast.error("Voice recognition error"); setListening(false); };
+    rec.onend = () => setListening(false);
+    recognitionRef.current = rec;
+    rec.start();
+    setListening(true);
+  };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      const base64 = ev.target?.result as string;
+      setImagePreview(base64);
+      setDetectingImage(true);
+      try {
+        const name = await detectItemFromImage(base64);
+        if (name) {
+          setDetectedItem(name);
+          setInput(`I sold ${name}`);
+          toast.success(`Detected: ${name}`);
+        } else {
+          toast.error("Could not identify item from image");
+        }
+      } catch {
+        toast.error("Image detection failed");
+      } finally {
+        setDetectingImage(false);
+        // reset file input so same file can be re-selected
+        if (fileInputRef.current) fileInputRef.current.value = "";
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const clearImage = () => {
+    setImagePreview(null);
+    setDetectedItem(null);
+  };
 
   const handleSend = async () => {
     const text = input.trim();
@@ -75,6 +112,7 @@ export default function ChatInterface({ userId, role }: Props) {
         messages,
         userMessage: text,
         role,
+        imageItemName: detectedItem,
       });
 
       const assistantMsg: ChatMessage = {
@@ -86,9 +124,9 @@ export default function ChatInterface({ userId, role }: Props) {
 
       setMessages((prev) => [...prev, assistantMsg]);
       setLastAction(response.action_taken ?? null);
+      clearImage();
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Failed to send message");
-      // Remove the optimistic user message on error
       setMessages((prev) => prev.filter((m) => m.id !== userMsg.id));
     } finally {
       setLoading(false);
@@ -96,10 +134,7 @@ export default function ChatInterface({ userId, role }: Props) {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
   };
 
   const actionBadge = () => {
@@ -146,7 +181,7 @@ export default function ChatInterface({ userId, role }: Props) {
             </div>
             <p className="font-medium">Start recording sales</p>
             <p className="text-sm text-muted-foreground max-w-xs">
-              Just tell me what you sold. For example:<br />
+              Tell me what you sold, use voice 🎤, or upload a barcode/product image 📷<br />
               <span className="italic">&quot;Sold 5 Coca Cola for 250&quot;</span><br />
               <span className="italic">&quot;Ahmed ne 2 juice liye udhaar pe&quot;</span>
             </p>
@@ -191,6 +226,23 @@ export default function ChatInterface({ userId, role }: Props) {
         </div>
       </ScrollArea>
 
+      {/* Image preview strip */}
+      {imagePreview && (
+        <div className="flex items-center gap-2 py-2 px-1 border-t">
+          <div className="relative">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={imagePreview} alt="uploaded" className="h-12 w-12 object-cover rounded-lg border" />
+            <button onClick={clearImage} className="absolute -top-1 -right-1 bg-destructive text-white rounded-full w-4 h-4 flex items-center justify-center">
+              <X className="w-2.5 h-2.5" />
+            </button>
+          </div>
+          {detectingImage
+            ? <span className="text-xs text-muted-foreground flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> Detecting item...</span>
+            : detectedItem && <span className="text-xs text-primary font-medium">Detected: {detectedItem}</span>
+          }
+        </div>
+      )}
+
       {/* Input */}
       <div className="pt-4 border-t">
         <div className="flex gap-2 items-end">
@@ -211,9 +263,20 @@ export default function ChatInterface({ userId, role }: Props) {
               size="icon"
               variant={listening ? "destructive" : "outline"}
               className="h-[2.1rem] w-10 shrink-0"
-              title={listening ? "Stop recording" : "Start voice input"}
+              title={listening ? "Stop recording" : "Voice input"}
             >
               {listening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+            </Button>
+            <Button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={loading || detectingImage}
+              size="icon"
+              variant="outline"
+              className="h-[2.1rem] w-10 shrink-0"
+              title="Upload barcode or product image"
+            >
+              {detectingImage ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImagePlus className="w-4 h-4" />}
             </Button>
             <Button
               onClick={handleSend}
@@ -225,8 +288,16 @@ export default function ChatInterface({ userId, role }: Props) {
             </Button>
           </div>
         </div>
-        <p className="text-xs text-muted-foreground mt-2">Press Enter to send · Shift+Enter for new line · 🎤 mic for voice</p>
+        <p className="text-xs text-muted-foreground mt-2">Enter to send · Shift+Enter new line · 🎤 voice · 📷 image</p>
       </div>
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleImageUpload}
+      />
     </div>
   );
 }

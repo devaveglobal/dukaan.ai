@@ -3,7 +3,7 @@
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { createClient } from "@supabase/supabase-js";
 import { revalidatePath } from "next/cache";
-import { Profile } from "@/types";
+import { Profile, IncompleteSaleReview } from "@/types";
 
 function getAdminClient() {
   return createClient(
@@ -187,6 +187,84 @@ export async function inviteSeller(formData: { email: string; full_name: string;
   }
 
   revalidatePath("/admin/sellers");
+}
+
+export async function getIncompleteSaleReviews(): Promise<IncompleteSaleReview[]> {
+  await requireAdmin();
+  const supabase = await createServerClient();
+  const { data, error } = await supabase
+    .from("incomplete_sales")
+    .select("*, seller:profiles(full_name, email, branch)")
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as IncompleteSaleReview[];
+}
+
+export async function resolveIncompleteSale(params: {
+  id: string;
+  item_id: string;
+  quantity: number;
+  price: number;
+  admin_comment: string;
+  seller_id: string;
+}) {
+  await requireAdmin();
+  const supabase = await createServerClient();
+
+  // Create a real sale from the resolved data
+  const { data: sale, error: saleError } = await supabase
+    .from("sales")
+    .insert({
+      seller_id: params.seller_id,
+      payment_status: "paid",
+      total_amount: params.quantity * params.price,
+      ai_confidence: 1,
+      notes: `Resolved by admin: ${params.admin_comment}`,
+    })
+    .select()
+    .single();
+  if (saleError) throw new Error(saleError.message);
+
+  await supabase.from("sale_items").insert({
+    sale_id: sale.id,
+    item_id: params.item_id,
+    item_name: "",
+    quantity: params.quantity,
+    unit_price: params.price,
+    total_price: params.quantity * params.price,
+    matched: true,
+  });
+
+  // Deduct stock
+  void supabase.rpc("decrement_stock", { p_item_id: params.item_id, p_quantity: params.quantity });
+
+  // Mark incomplete_sale as resolved
+  const { error } = await supabase
+    .from("incomplete_sales")
+    .update({
+      status: "resolved",
+      resolved_sale_id: sale.id,
+      admin_comment: params.admin_comment,
+      resolved_quantity: params.quantity,
+      resolved_price: params.price,
+      resolved_item_id: params.item_id,
+    })
+    .eq("id", params.id);
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/admin/reviews");
+  return sale;
+}
+
+export async function dismissIncompleteSale(id: string) {
+  await requireAdmin();
+  const supabase = await createServerClient();
+  const { error } = await supabase
+    .from("incomplete_sales")
+    .update({ status: "dismissed" })
+    .eq("id", id);
+  if (error) throw new Error(error.message);
+  revalidatePath("/admin/reviews");
 }
 
 export async function getSellerAccounts(): Promise<SellerAccount[]> {

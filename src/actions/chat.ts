@@ -34,6 +34,7 @@ interface ChatContext {
   messages: ChatMessage[];
   userMessage: string;
   role: "seller" | "admin";
+  imageItemName?: string | null;
 }
 
 export interface ChatResponse {
@@ -43,55 +44,156 @@ export interface ChatResponse {
   pending_payment_id?: string;
 }
 
+/**
+ * Determines if the current message is a direct answer to a pending follow-up.
+ *
+ * A message is considered a "follow-up answer" if:
+ * - It has sale intent (log_sale / credit_sale), OR
+ * - It provides item/quantity/price info that fills the pending context's missing fields
+ *
+ * A message is considered "abandoned" (new unrelated topic) ONLY if:
+ * - It is a completely new, self-contained sale with ALL fields present (item + quantity + price)
+ *   AND it shares no item/quantity overlap with the pending context
+ */
+function isFollowUpAnswer(
+  current: ExtractedSaleData,
+  pending: ExtractedSaleData,
+  rawMessage: string
+): boolean {
+  const isSaleIntent = current.intent === "log_sale" || current.intent === "credit_sale";
+  if (!isSaleIntent) return false;
+
+  // If current message is self-contained and complete with a clear item name,
+  // check if it could be answering the pending context's missing fields
+  const pendingMissing = pending.missing_fields ?? [];
+
+  // Pending was missing item → current provides an item → it's an answer
+  if (pendingMissing.includes("item") && current.items.length > 0 && current.items[0].raw_name.trim()) {
+    return true;
+  }
+
+  // Pending had an item but was missing price/quantity → current provides those
+  if (!pendingMissing.includes("item") && pending.items.length > 0) {
+    const currentHasPrice = current.items[0]?.unit_price != null || current.items[0]?.total_price != null || current.total_amount != null;
+    const currentHasQty = current.items[0]?.quantity != null;
+    if (pendingMissing.includes("price") && currentHasPrice) return true;
+    if (pendingMissing.includes("quantity") && currentHasQty) return true;
+  }
+
+  // Short messages (≤ 6 words) during an active pending context are almost always follow-up answers
+  const wordCount = rawMessage.trim().split(/\s+/).length;
+  if (wordCount <= 6 && isSaleIntent) return true;
+
+  return false;
+}
+
 export async function processChatMessage(ctx: ChatContext): Promise<ChatResponse> {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error("Unauthorized");
 
-  const { messages, userMessage, role } = ctx;
+  const { messages, userMessage, role, imageItemName } = ctx;
   const sessionId = `${user.id}-${new Date().toDateString()}`;
 
-  // ── Step 1: Extract structured data from current message ──────────────────
-  const extracted = await extractSaleData(userMessage);
+  // ── Step 1: Extract structured data ──────────────────────────────────────
+  const extractionMessage = imageItemName
+    ? `${userMessage} [detected item from image: ${imageItemName}]`
+    : userMessage;
+  const extracted = await extractSaleData(extractionMessage);
 
-  // ── Step 2: Load any pending context from previous incomplete message ─────
+  // ── Step 2: Load pending context ──────────────────────────────────────────
   const pendingCtx = await loadPendingContext(user.id, sessionId);
-  const hasPendingContext = !!pendingCtx?.extracted;
+  const pendingExtracted = pendingCtx?.extracted as ExtractedSaleData | undefined;
+  const hasPending = !!pendingExtracted;
 
   let persistResult = null;
   let actionContext = "";
 
-  // ── Step 3: Determine what to do ─────────────────────────────────────────
-
   const isSaleIntent = extracted.intent === "log_sale" || extracted.intent === "credit_sale";
-  const isIncomplete = extracted.missing_fields.includes("item") || extracted.items.length === 0;
 
-  if (isSaleIntent) {
+  // ── Step 3: State machine ─────────────────────────────────────────────────
 
-    // Case A: Seller had a pending incomplete context AND now sends a new sale
-    // → abandon the old pending context (send to incomplete_sales), process new sale
-    if (hasPendingContext && !isIncomplete) {
-      // Save the abandoned pending context as incomplete
+  if (hasPending) {
+    // We have an unresolved pending context from a previous message.
+    // Decide: is this message a follow-up answer, or is the seller abandoning it?
+
+    const isAnswer = isFollowUpAnswer(extracted, pendingExtracted!, userMessage);
+
+    if (isAnswer) {
+      // ── CASE A: Seller is completing the pending sale ──────────────────
+      // Merge pending + current to build a complete sale record
+      const merged: ExtractedSaleData = mergePendingWithAnswer(pendingExtracted!, extracted);
+      await clearPendingContext(user.id, sessionId);
+
+      // If merged is still incomplete (e.g. still missing price), keep asking
+      if (!merged.is_complete && merged.missing_fields.length > 0) {
+        await savePendingContext(user.id, sessionId, {
+          extracted: merged,
+          raw_message: `${pendingCtx!.raw_message} / ${userMessage}`,
+          asked_followup: true,
+        });
+        actionContext = JSON.stringify({
+          action: "incomplete_sentence_asking",
+          missing_fields: merged.missing_fields,
+          known_item: merged.items[0]?.raw_name,
+          known_quantity: merged.items[0]?.quantity,
+          known_price: merged.total_amount ?? merged.items[0]?.total_price,
+        });
+      } else {
+        // Complete — persist it
+        try {
+          persistResult = await persistSale(merged, `${pendingCtx!.raw_message} / ${userMessage}`, user.id);
+          actionContext = buildSaleContext(persistResult, merged, "sale_recorded");
+        } catch {
+          actionContext = JSON.stringify({ action: "error" });
+        }
+      }
+    } else {
+      // ── CASE B: Seller abandoned the pending context, starting fresh ───
+      // Only NOW do we flush the old pending to reviews
       await supabase.from("incomplete_sales").insert({
         seller_id: user.id,
-        raw_message: (pendingCtx.raw_message as string) ?? "",
-        extracted_data: pendingCtx.extracted as Record<string, unknown>,
+        raw_message: (pendingCtx!.raw_message as string) ?? "",
+        extracted_data: pendingExtracted as unknown as Record<string, unknown>,
         status: "pending_admin_review",
       });
       await clearPendingContext(user.id, sessionId);
 
-      // Now process the new complete sale
-      try {
-        persistResult = await persistSale(extracted, userMessage, user.id);
-        actionContext = buildSaleContext(persistResult, extracted, "incomplete_sentence_abandoned");
-      } catch {
-        actionContext = JSON.stringify({ action: "error" });
+      // Process the new message as a fresh sale
+      if (isSaleIntent) {
+        const isNewIncomplete = isMissingCriticalFields(extracted);
+        if (isNewIncomplete) {
+          await savePendingContext(user.id, sessionId, {
+            extracted,
+            raw_message: userMessage,
+            asked_followup: true,
+          });
+          actionContext = JSON.stringify({
+            action: "incomplete_sentence_asking",
+            missing_fields: extracted.missing_fields,
+            known_item: extracted.items[0]?.raw_name,
+            known_quantity: extracted.items[0]?.quantity,
+            known_price: extracted.total_amount ?? extracted.items[0]?.total_price,
+          });
+        } else {
+          try {
+            persistResult = await persistSale(extracted, userMessage, user.id);
+            actionContext = buildSaleContext(persistResult, extracted, "incomplete_sentence_abandoned");
+          } catch {
+            actionContext = JSON.stringify({ action: "error" });
+          }
+        }
+      } else {
+        actionContext = JSON.stringify({ action: "none" });
       }
     }
 
-    // Case B: Current message has no item name (incomplete sentence like "sold for 200")
-    // → save as pending context, ask ONE gentle follow-up, do NOT persist yet
-    else if (isIncomplete) {
+  } else if (isSaleIntent) {
+    // ── CASE C: No pending context — fresh sale message ───────────────────
+    const isIncomplete = isMissingCriticalFields(extracted);
+
+    if (isIncomplete) {
+      // Save as pending, ask follow-up — do NOT persist yet
       await savePendingContext(user.id, sessionId, {
         extracted,
         raw_message: userMessage,
@@ -100,37 +202,12 @@ export async function processChatMessage(ctx: ChatContext): Promise<ChatResponse
       actionContext = JSON.stringify({
         action: "incomplete_sentence_asking",
         missing_fields: extracted.missing_fields,
-        known_price: extracted.total_amount ?? extracted.items[0]?.total_price,
+        known_item: extracted.items[0]?.raw_name,
         known_quantity: extracted.items[0]?.quantity,
+        known_price: extracted.total_amount ?? extracted.items[0]?.total_price,
       });
-    }
-
-    // Case C: Seller is answering a previous follow-up (pending context exists, current message has item)
-    else if (hasPendingContext && isSaleIntent && !isIncomplete) {
-      // Merge pending context with current answer
-      const prevExtracted = pendingCtx.extracted as ExtractedSaleData;
-      const merged: ExtractedSaleData = {
-        ...prevExtracted,
-        items: extracted.items.length > 0 ? extracted.items : prevExtracted.items,
-        total_amount: extracted.total_amount ?? prevExtracted.total_amount,
-        customer_name: extracted.customer_name ?? prevExtracted.customer_name,
-        payment_status: extracted.payment_status ?? prevExtracted.payment_status,
-        confidence: Math.max(extracted.confidence, prevExtracted.confidence ?? 0),
-        is_complete: true,
-        missing_fields: [],
-      };
-      await clearPendingContext(user.id, sessionId);
-
-      try {
-        persistResult = await persistSale(merged, `${pendingCtx.raw_message} / ${userMessage}`, user.id);
-        actionContext = buildSaleContext(persistResult, merged, "sale_recorded");
-      } catch {
-        actionContext = JSON.stringify({ action: "error" });
-      }
-    }
-
-    // Case D: Normal complete sale
-    else {
+    } else {
+      // Complete sale — persist immediately
       try {
         persistResult = await persistSale(extracted, userMessage, user.id);
         actionContext = buildSaleContext(persistResult, extracted, "sale_recorded");
@@ -140,6 +217,7 @@ export async function processChatMessage(ctx: ChatContext): Promise<ChatResponse
     }
 
   } else if (extracted.intent === "query") {
+    // ── CASE D: Query ─────────────────────────────────────────────────────
     const { data: stats } = await supabase
       .from("sales")
       .select("total_amount, payment_status, created_at")
@@ -211,6 +289,94 @@ export async function processChatMessage(ctx: ChatContext): Promise<ChatResponse
     sale_id: persistResult?.sale?.id,
     pending_payment_id: persistResult?.pending_payment?.id,
   };
+}
+
+/**
+ * A sale is "missing critical fields" if we cannot persist it meaningfully.
+ * We need at minimum: an item name.
+ * Price/quantity can be filled from catalog or assumed — but item name is non-negotiable.
+ */
+function isMissingCriticalFields(extracted: ExtractedSaleData): boolean {
+  const hasItem = extracted.items.length > 0 && extracted.items[0].raw_name.trim().length > 0;
+  if (!hasItem) return true;
+
+  // If item is present but both quantity AND price are missing, ask for more info
+  const hasQuantity = extracted.items[0].quantity != null;
+  const hasPrice = extracted.items[0].unit_price != null
+    || extracted.items[0].total_price != null
+    || extracted.total_amount != null;
+
+  // We can infer price from catalog, so only block if quantity is also missing
+  // (catalog lookup happens in persistSale — we trust it to fill price)
+  if (!hasQuantity && !hasPrice) return true;
+
+  return false;
+}
+
+/**
+ * Merges a pending (incomplete) extracted sale with the seller's follow-up answer.
+ * The follow-up answer fills in whatever was missing.
+ */
+function mergePendingWithAnswer(
+  pending: ExtractedSaleData,
+  answer: ExtractedSaleData
+): ExtractedSaleData {
+  // Build merged items: prefer answer's items if they have a real name,
+  // otherwise keep pending's items and patch in price/quantity from answer
+  let mergedItems = pending.items;
+
+  if (answer.items.length > 0 && answer.items[0].raw_name.trim()) {
+    // Answer provided item name — use answer's items as base, fill gaps from pending
+    mergedItems = answer.items.map((ai, idx) => {
+      const pi = pending.items[idx];
+      return {
+        ...ai,
+        quantity: ai.quantity ?? pi?.quantity,
+        unit_price: ai.unit_price ?? pi?.unit_price,
+        total_price: ai.total_price ?? pi?.total_price,
+      };
+    });
+  } else {
+    // Answer didn't provide item name — patch pending items with answer's price/qty
+    mergedItems = pending.items.map((pi, idx) => {
+      const ai = answer.items[idx];
+      return {
+        ...pi,
+        quantity: pi.quantity ?? ai?.quantity ?? answer.items[0]?.quantity,
+        unit_price: pi.unit_price ?? ai?.unit_price ?? answer.items[0]?.unit_price,
+        total_price: pi.total_price ?? ai?.total_price ?? answer.total_amount,
+      };
+    });
+  }
+
+  const merged: ExtractedSaleData = {
+    intent: pending.intent === "unknown" ? answer.intent : pending.intent,
+    items: mergedItems,
+    customer_name: answer.customer_name ?? pending.customer_name,
+    payment_status: answer.payment_status ?? pending.payment_status,
+    total_amount: answer.total_amount ?? pending.total_amount,
+    confidence: Math.max(answer.confidence, pending.confidence ?? 0),
+    is_complete: false,
+    missing_fields: [],
+  };
+
+  // Recompute missing fields on the merged result
+  const missing: string[] = [];
+  const hasItem = merged.items.length > 0 && merged.items[0].raw_name.trim().length > 0;
+  if (!hasItem) missing.push("item");
+
+  const hasQty = merged.items[0]?.quantity != null;
+  const hasPrice = merged.items[0]?.unit_price != null
+    || merged.items[0]?.total_price != null
+    || merged.total_amount != null;
+
+  if (!hasQty) missing.push("quantity");
+  if (!hasPrice) missing.push("price");
+
+  merged.missing_fields = missing;
+  merged.is_complete = missing.length === 0;
+
+  return merged;
 }
 
 function buildSaleContext(
