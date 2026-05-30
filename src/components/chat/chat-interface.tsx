@@ -155,7 +155,7 @@ export default function ChatInterface({ userId, role }: Props) {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-8rem)] max-w-2xl mx-auto">
+    <div className="flex flex-col h-[calc(100dvh-7rem)] md:h-[calc(100vh-8rem)] max-w-2xl mx-auto">
       {/* Header */}
       <div className="flex items-center justify-between pb-4 border-b">
         <div className="flex items-center gap-2">
@@ -244,51 +244,55 @@ export default function ChatInterface({ userId, role }: Props) {
       )}
 
       {/* Input */}
-      <div className="pt-4 border-t">
+      <div className="pt-3 border-t">
         <div className="flex gap-2 items-end">
-          <Textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="e.g. Sold 3 Pepsi for 150..."
-            rows={2}
-            className="resize-none flex-1"
-            disabled={loading}
-          />
-          <div className="flex flex-col gap-1">
-            <Button
-              type="button"
-              onClick={toggleVoice}
+          <div className="flex-1 flex flex-col gap-2">
+            <Textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="e.g. Sold 3 Pepsi for 150..."
+              rows={2}
+              className="resize-none w-full py-2.5"
               disabled={loading}
-              size="icon"
-              variant={listening ? "destructive" : "outline"}
-              className="h-[2.1rem] w-10 shrink-0"
-              title={listening ? "Stop recording" : "Voice input"}
-            >
-              {listening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
-            </Button>
-            <Button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={loading || detectingImage}
-              size="icon"
-              variant="outline"
-              className="h-[2.1rem] w-10 shrink-0"
-              title="Upload barcode or product image"
-            >
-              {detectingImage ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImagePlus className="w-4 h-4" />}
-            </Button>
-            <Button
-              onClick={handleSend}
-              disabled={!input.trim() || loading}
-              size="icon"
-              className="h-[2.1rem] w-10 shrink-0"
-            >
-              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-            </Button>
+            />
+            <div className="flex items-center gap-1.5">
+              <Button
+                type="button"
+                onClick={toggleVoice}
+                disabled={loading}
+                size="sm"
+                variant={listening ? "destructive" : "outline"}
+                className="h-8 gap-1.5 px-3"
+                title={listening ? "Stop recording" : "Voice input"}
+              >
+                {listening ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
+                <span className="text-xs">{listening ? "Stop" : "Voice"}</span>
+              </Button>
+              <Button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={loading || detectingImage}
+                size="sm"
+                variant="outline"
+                className="h-8 gap-1.5 px-3"
+                title="Upload product image"
+              >
+                {detectingImage ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ImagePlus className="w-3.5 h-3.5" />}
+                <span className="text-xs">Image</span>
+              </Button>
+              <p className="text-xs text-muted-foreground ml-auto hidden sm:block">Enter to send · Shift+Enter new line</p>
+            </div>
           </div>
+          <Button
+            onClick={handleSend}
+            disabled={!input.trim() || loading}
+            size="icon"
+            className="h-[5.5rem] w-11 shrink-0 rounded-xl"
+          >
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+          </Button>
         </div>
-        <p className="text-xs text-muted-foreground mt-2">Enter to send · Shift+Enter new line · 🎤 voice · 📷 image</p>
       </div>
 
       <input

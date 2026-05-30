@@ -11,7 +11,7 @@ export default async function SellerChatPage() {
   if (!user) redirect("/login");
 
   return (
-    <div className="p-6">
+    <div className="p-3 md:p-6">
       <ChatInterface userId={user.id} role="seller" />
     </div>
   );

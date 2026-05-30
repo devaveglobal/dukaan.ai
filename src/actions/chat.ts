@@ -4,15 +4,18 @@ import { createClient } from "@/lib/supabase/server";
 import { extractSaleData } from "@/lib/ai-extractor";
 import { persistSale, savePendingContext, loadPendingContext, clearPendingContext } from "@/lib/sale-persister";
 import { ChatMessage, ExtractedSaleData } from "@/types";
+import { notifyAdmins } from "@/actions/notifications";
 
-const CONVERSATION_SYSTEM_PROMPT = `You are a smart, friendly AI sales assistant for a retail/mart business.
+const CONVERSATION_SYSTEM_PROMPT = `You are a sales recording assistant for a retail/mart business. Your ONLY purpose is to help record sales, answer sales-related queries, and assist with inventory questions.
 
-RULES:
-1. Confirm recorded sales naturally and briefly (1-2 sentences max)
-2. Respond in the SAME language the seller used (English, Urdu, Roman Urdu)
-3. Never show JSON, IDs, or technical details
-4. If asking a follow-up, ask ONE question only — softly, not forcefully
-5. Never block the seller or demand an answer
+STRICT RULES:
+1. ONLY respond to sales-related topics: recording sales, checking today's sales, stock queries, payment status, customer credit (udhaar)
+2. If the user asks ANYTHING unrelated to sales (coding, general knowledge, jokes, news, personal questions, etc.), respond ONLY with: "I can only help with sales recording and sales-related questions."
+3. Confirm recorded sales naturally and briefly (1-2 sentences max)
+4. Respond in the SAME language the seller used (English, Urdu, Roman Urdu)
+5. Never show JSON, IDs, or technical details
+6. If asking a follow-up, ask ONE question only — softly, not forcefully
+7. Never block the seller or demand an answer
 
 CONTEXT ACTIONS you will receive:
 - "sale_recorded": confirm what was saved
@@ -21,14 +24,15 @@ CONTEXT ACTIONS you will receive:
 - "incomplete_sentence_asking": seller gave incomplete info, ask ONE gentle follow-up
 - "incomplete_sentence_abandoned": seller moved on, previous sale sent to review, confirm new sale
 - "query_answered": answer the question from stats provided
-- "none": general chat, respond naturally
+- "none": if sales-related, respond helpfully; if NOT sales-related, refuse with the restriction message
 
 RESPONSE EXAMPLES:
 - sale_recorded: "Got it! Recorded 5 Coca Cola for Rs 250. ✓"
 - credit_recorded: "Noted. 2 Pepsi for Ali saved as pending payment."
 - incomplete_logged: "Saved! Note: '[item]' isn't in the catalog yet — admin will add it."
 - incomplete_sentence_asking: "Sure! Which item did you sell for Rs 200?" (soft, one question)
-- incomplete_sentence_abandoned: "No problem! Previous sale sent for review. [confirm new sale]"`;
+- incomplete_sentence_abandoned: "No problem! Previous sale sent for review. [confirm new sale]"
+- off-topic: "I can only help with sales recording and sales-related questions."`;
 
 interface ChatContext {
   messages: ChatMessage[];
@@ -239,6 +243,29 @@ export async function processChatMessage(ctx: ChatContext): Promise<ChatResponse
   }
 
   // ── Step 4: Generate conversational reply ─────────────────────────────────
+  // Fire notifications async — don't block the reply
+  if (persistResult) {
+    const sellerName = user.user_metadata?.full_name ?? user.email ?? "A seller";
+    if (persistResult.type === "credit_sale") {
+      void notifyAdmins({
+        title: "💳 New Credit Sale",
+        body: `${sellerName} recorded a pending payment${extracted.customer_name ? ` for ${extracted.customer_name}` : ""} — Rs ${persistResult.sale?.total_amount ?? 0}`,
+        data: { type: "credit_sale", sale_id: persistResult.sale?.id ?? "" },
+      });
+    } else if (persistResult.type === "sale") {
+      void notifyAdmins({
+        title: "🛒 New Sale",
+        body: `${sellerName} recorded a sale — Rs ${persistResult.sale?.total_amount ?? 0}`,
+        data: { type: "sale", sale_id: persistResult.sale?.id ?? "" },
+      });
+    } else if (persistResult.type === "incomplete") {
+      void notifyAdmins({
+        title: "⚠️ Unknown Product",
+        body: `${sellerName} sold an item not in your catalog: "${persistResult.unmatched_items.join(", ")}"`,
+        data: { type: "incomplete" },
+      });
+    }
+  }
   const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
     headers: {

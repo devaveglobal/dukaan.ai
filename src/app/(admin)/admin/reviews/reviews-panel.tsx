@@ -28,7 +28,7 @@ const statusBadge = (status: string) => {
 export default function ReviewsPanel({ reviews: initial, items }: Props) {
   const [reviews, setReviews] = useState(initial);
   const [selected, setSelected] = useState<IncompleteSaleReview | null>(null);
-  const [form, setForm] = useState({ item_id: "", quantity: "", price: "", admin_comment: "" });
+  const [form, setForm] = useState({ item_id: "", item_name: "", quantity: "", price: "", admin_comment: "" });
   const [loading, setLoading] = useState(false);
 
   const pending = reviews.filter((r) => r.status === "pending_admin_review");
@@ -41,6 +41,7 @@ export default function ReviewsPanel({ reviews: initial, items }: Props) {
     const extItems = ext?.items as Array<Record<string, unknown>> | undefined;
     setForm({
       item_id: "",
+      item_name: "",
       quantity: String(extItems?.[0]?.quantity ?? ""),
       price: String(extItems?.[0]?.unit_price ?? ext?.total_amount ?? ""),
       admin_comment: "",
@@ -86,12 +87,13 @@ export default function ReviewsPanel({ reviews: initial, items }: Props) {
   };
 
   const ReviewTable = ({ rows }: { rows: IncompleteSaleReview[] }) => (
+    <div className="overflow-x-auto">
     <Table>
       <TableHeader className="bg-muted/50">
         <TableRow>
           <TableHead className="font-bold">Seller</TableHead>
           <TableHead className="font-bold">Message</TableHead>
-          <TableHead className="font-bold">Date</TableHead>
+          <TableHead className="font-bold hidden md:table-cell">Date</TableHead>
           <TableHead className="font-bold">Status</TableHead>
           <TableHead className="text-right font-bold">Actions</TableHead>
         </TableRow>
@@ -105,23 +107,23 @@ export default function ReviewsPanel({ reviews: initial, items }: Props) {
           <TableRow key={r.id} className="hover:bg-primary/5 transition-colors">
             <TableCell>
               <p className="font-medium text-sm">{r.seller?.full_name ?? "—"}</p>
-              <p className="text-xs text-muted-foreground">{r.seller?.branch}</p>
+              <p className="text-xs text-muted-foreground hidden sm:block">{r.seller?.branch}</p>
             </TableCell>
-            <TableCell className="max-w-xs">
+            <TableCell className="max-w-[140px] sm:max-w-xs">
               <p className="text-sm truncate">{r.raw_message}</p>
               {r.admin_comment && (
-                <p className="text-xs text-muted-foreground mt-0.5">Admin: {r.admin_comment}</p>
+                <p className="text-xs text-muted-foreground mt-0.5 truncate">Admin: {r.admin_comment}</p>
               )}
             </TableCell>
-            <TableCell className="text-sm text-muted-foreground">
+            <TableCell className="text-sm text-muted-foreground hidden md:table-cell">
               {new Date(r.created_at).toLocaleDateString()}
             </TableCell>
             <TableCell>{statusBadge(r.status)}</TableCell>
             <TableCell className="text-right">
               {r.status === "pending_admin_review" && (
-                <div className="flex gap-2 justify-end">
+                <div className="flex gap-1 justify-end">
                   <Button size="sm" onClick={() => openResolve(r)}>Resolve</Button>
-                  <Button size="sm" variant="ghost" onClick={() => handleDismiss(r.id)}>Dismiss</Button>
+                  <Button size="sm" variant="ghost" onClick={() => handleDismiss(r.id)} className="hidden sm:inline-flex">Dismiss</Button>
                 </div>
               )}
             </TableCell>
@@ -129,6 +131,7 @@ export default function ReviewsPanel({ reviews: initial, items }: Props) {
         ))}
       </TableBody>
     </Table>
+    </div>
   );
 
   return (
@@ -163,7 +166,7 @@ export default function ReviewsPanel({ reviews: initial, items }: Props) {
 
       {/* Resolve Dialog */}
       <Dialog open={!!selected} onOpenChange={(open) => !open && setSelected(null)}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md p-5">
           <DialogHeader>
             <DialogTitle>Resolve Incomplete Sale</DialogTitle>
           </DialogHeader>
@@ -180,10 +183,12 @@ export default function ReviewsPanel({ reviews: initial, items }: Props) {
                 <Select value={form.item_id} onValueChange={(v: string | null) => {
                   if (!v) return;
                   const item = items.find((i) => i.id === v);
-                  setForm((f) => ({ ...f, item_id: v, price: item?.price != null ? String(item.price) : f.price }));
+                  setForm((f) => ({ ...f, item_id: v, item_name: item?.name ?? "", price: item?.price != null ? String(item.price) : f.price }));
                 }}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Select item from catalog" />
+                    <SelectValue placeholder="Select item from catalog">
+                      {form.item_name || undefined}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {items.map((item) => (

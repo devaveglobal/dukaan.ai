@@ -19,11 +19,11 @@ export default function RevenueChart({ data }: Props) {
         <CardTitle className="text-sm font-semibold">Revenue — Last 30 Days</CardTitle>
       </CardHeader>
       <CardContent>
-        <ResponsiveContainer width="100%" height={240}>
-          <LineChart data={formatted} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
+        <ResponsiveContainer width="100%" height={220}>
+          <LineChart data={formatted} margin={{ top: 4, right: 8, left: -10, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-            <XAxis dataKey="date" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
-            <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} tickFormatter={(v) => `Rs ${v}`} />
+            <XAxis dataKey="date" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
+            <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} tickFormatter={(v) => `${v}`} width={40} />
             <Tooltip formatter={(v, name) => [name === "revenue" ? `Rs ${Number(v)}` : v, name === "revenue" ? "Revenue" : "Transactions"]} />
             <Legend />
             <Line type="monotone" dataKey="revenue" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} />

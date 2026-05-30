@@ -71,7 +71,7 @@ export default function LoginForm() {
       setLoading(false);
     } else {
       const role = data.user?.user_metadata?.role;
-      router.push(role === "admin" ? "/admin/dashboard" : "/dashboard");
+      router.push(role === "admin" ? "/admin/chat" : "/chat");
       router.refresh();
     }
   };
@@ -106,7 +106,7 @@ export default function LoginForm() {
 
       toast.success("Password set! Redirecting...");
       const role = data.user?.user_metadata?.role ?? result.role;
-      window.location.assign(role === "admin" ? "/admin/dashboard" : "/dashboard");
+      window.location.assign(role === "admin" ? "/admin/chat" : "/chat");
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Failed to set password");
       setLoading(false);

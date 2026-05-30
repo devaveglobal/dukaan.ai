@@ -28,15 +28,15 @@ export default function KpiCards({ data }: Props) {
   ];
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+    <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-3">
       {cards.map((c) => (
         <Card key={c.label}>
-          <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-            <CardTitle className="text-xs font-medium text-muted-foreground">{c.label}</CardTitle>
-            <c.icon className={`w-4 h-4 ${c.color}`} />
+          <CardHeader className="flex flex-row items-center justify-between pb-1 space-y-0 px-4 pt-4">
+            <CardTitle className="text-xs font-medium text-muted-foreground leading-tight">{c.label}</CardTitle>
+            <c.icon className={`w-4 h-4 shrink-0 ${c.color}`} />
           </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{c.value}</p>
+          <CardContent className="px-4 pb-4">
+            <p className="text-xl sm:text-2xl font-bold truncate">{c.value}</p>
             {c.sub && <p className="text-xs text-muted-foreground mt-0.5">{c.sub}</p>}
           </CardContent>
         </Card>

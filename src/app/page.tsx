@@ -8,5 +8,5 @@ export default async function HomePage() {
   if (!user) redirect("/login");
 
   const role = user.user_metadata?.role;
-  redirect(role === "admin" ? "/admin/dashboard" : "/dashboard");
+  redirect(role === "admin" ? "/admin/chat" : "/chat");
 }

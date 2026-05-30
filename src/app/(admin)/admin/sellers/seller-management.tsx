@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -8,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Loader2, Plus, Mail, Building, User, CheckCircle2, Clock3 } from "lucide-react";
+import { Loader2, Plus, Mail, Building, User, CheckCircle2, Clock3, MessageSquare } from "lucide-react";
 import { getSellerAccounts, inviteSeller, type SellerAccount } from "@/actions/admin";
 
 export default function SellerManagement() {
@@ -67,8 +68,8 @@ export default function SellerManagement() {
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
-      <Card className="glass overflow-hidden border-none shadow-2xl">
-        <CardHeader className="bg-primary/5 border-b border-primary/10">
+      <Card className="glass overflow-hidden border-none pt-0 shadow-2xl">
+        <CardHeader className="bg-primary/5 pt-4 border-b border-primary/10">
           <CardTitle className="text-2xl font-bold flex items-center gap-2">
             <Plus className="w-6 h-6 text-primary" />
             Invite New Seller
@@ -78,7 +79,7 @@ export default function SellerManagement() {
           </CardDescription>
         </CardHeader>
         <CardContent className="pt-6">
-          <form onSubmit={handleInvite} className="grid grid-cols-1 md:grid-cols-3 gap-6 items-end">
+          <form onSubmit={handleInvite} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 items-end">
             <div className="space-y-2">
               <Label htmlFor="full_name" className="text-sm font-medium flex items-center gap-2">
                 <User className="w-4 h-4" /> Full Name
@@ -136,13 +137,14 @@ export default function SellerManagement() {
         </CardHeader>
         <CardContent className="p-0">
           <Table>
-            <TableHeader className="bg-muted/50">
+            <TableHeader className="bg-muted/50 p-4">
               <TableRow>
                 <TableHead className="font-bold">Name</TableHead>
-                <TableHead className="font-bold">Email</TableHead>
-                <TableHead className="font-bold">Branch</TableHead>
-                <TableHead className="font-bold">Date Invited</TableHead>
+                <TableHead className="font-bold hidden sm:table-cell">Email</TableHead>
+                <TableHead className="font-bold hidden md:table-cell">Branch</TableHead>
+                <TableHead className="font-bold hidden md:table-cell">Date Invited</TableHead>
                 <TableHead className="text-right font-bold">Status</TableHead>
+                <TableHead className="text-right font-bold">Chat</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -161,21 +163,28 @@ export default function SellerManagement() {
                 </TableRow>
               ) : (
                 sellers.map((seller) => (
-                  <TableRow key={seller.id} className="hover:bg-primary/5 transition-colors">
+                  <TableRow key={seller.id} className="hover:bg-primary/5 transition-colors ">
                     <TableCell className="font-medium">{seller.full_name}</TableCell>
-                    <TableCell>{seller.email}</TableCell>
-                    <TableCell>{seller.branch}</TableCell>
-                    <TableCell>{new Date(seller.created_at).toLocaleDateString()}</TableCell>
+                    <TableCell className="hidden sm:table-cell">{seller.email}</TableCell>
+                    <TableCell className="hidden md:table-cell">{seller.branch}</TableCell>
+                    <TableCell className="hidden md:table-cell">{new Date(seller.created_at).toLocaleDateString()}</TableCell>
                     <TableCell className="text-right">
                       {seller.setup_status === "active" ? (
-                        <Badge className="bg-emerald-600 text-white">
+                        <Badge className="bg-emerald-600 text-white gap-1">
                           <CheckCircle2 className="w-3 h-3" /> Active
                         </Badge>
                       ) : (
-                        <Badge variant="outline" className="border-amber-300 text-amber-700">
+                        <Badge variant="outline" className="border-amber-300 text-amber-700 gap-1">
                           <Clock3 className="w-3 h-3" /> Pending
                         </Badge>
                       )}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Link href={`/admin/sellers/${seller.id}/chat`}>
+                        <Button size="sm" variant="ghost" className="h-7 px-2">
+                          <MessageSquare className="w-3.5 h-3.5" />
+                        </Button>
+                      </Link>
                     </TableCell>
                   </TableRow>
                 ))

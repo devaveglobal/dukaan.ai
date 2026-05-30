@@ -47,14 +47,14 @@ export default function SellersAnalyticsTable({ sellers, sellerIds }: Props) {
         <CardHeader>
           <CardTitle className="text-sm font-semibold">Seller Performance — This Month</CardTitle>
         </CardHeader>
-        <CardContent className="p-0">
+        <CardContent className="p-0 overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Seller</TableHead>
                 <TableHead className="text-right">Revenue</TableHead>
-                <TableHead className="text-right">Transactions</TableHead>
-                <TableHead className="text-right">Pending</TableHead>
+                <TableHead className="text-right hidden sm:table-cell">Transactions</TableHead>
+                <TableHead className="text-right hidden sm:table-cell">Pending</TableHead>
                 <TableHead className="w-10" />
               </TableRow>
             </TableHeader>
@@ -68,8 +68,8 @@ export default function SellersAnalyticsTable({ sellers, sellerIds }: Props) {
                 <TableRow key={i}>
                   <TableCell className="font-medium">{s.name}</TableCell>
                   <TableCell className="text-right font-semibold">Rs {s.revenue.toLocaleString()}</TableCell>
-                  <TableCell className="text-right">{s.transactions}</TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="text-right hidden sm:table-cell">{s.transactions}</TableCell>
+                  <TableCell className="text-right hidden sm:table-cell">
                     {s.pending > 0
                       ? <Badge variant="outline" className="text-yellow-600 border-yellow-400">Rs {s.pending.toLocaleString()}</Badge>
                       : <span className="text-muted-foreground text-xs">—</span>
@@ -97,7 +97,7 @@ export default function SellersAnalyticsTable({ sellers, sellerIds }: Props) {
       </Card>
 
       <Sheet open={open} onOpenChange={setOpen}>
-        <SheetContent className="w-full sm:max-w-2xl overflow-y-auto">
+        <SheetContent className="w-full sm:max-w-lg overflow-y-auto p-4 sm:p-6">
           {detail && (
             <>
               <SheetHeader className="mb-6">

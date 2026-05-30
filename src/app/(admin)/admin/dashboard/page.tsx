@@ -38,9 +38,9 @@ export default async function AdminDashboardPage() {
   const sellerIds = revenueBySeller.map((s) => sellerIdMap.get(s.name) ?? "");
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <div>
-        <h1 className="text-2xl font-semibold">Analytics Dashboard</h1>
+        <h1 className="text-xl sm:text-2xl font-semibold">Analytics Dashboard</h1>
         <p className="text-sm text-muted-foreground mt-1">Live overview of all sellers and sales activity</p>
       </div>
 

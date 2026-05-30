@@ -256,6 +256,18 @@ export async function resolveIncompleteSale(params: {
   return sale;
 }
 
+export async function getSellerChatHistory(sellerId: string) {
+  await requireAdmin();
+  const supabaseAdmin = getAdminClient();
+  const { data, error } = await supabaseAdmin
+    .from("ai_conversations")
+    .select("session_id, messages, updated_at")
+    .eq("user_id", sellerId)
+    .order("updated_at", { ascending: false });
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}
+
 export async function dismissIncompleteSale(id: string) {
   await requireAdmin();
   const supabase = await createServerClient();

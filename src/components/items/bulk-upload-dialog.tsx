@@ -3,10 +3,9 @@
 import { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { bulkCreateItems } from "@/actions/items";
-import { Loader2, Download } from "lucide-react";
+import { Loader2, Download, Upload, FileText, CheckCircle2 } from "lucide-react";
 
 interface Props {
   open: boolean;
@@ -47,6 +46,7 @@ function parseCSV(text: string) {
 
 export default function BulkUploadDialog({ open, onClose, onSaved }: Props) {
   const [loading, setLoading] = useState(false);
+  const [fileName, setFileName] = useState<string | null>(null);
   const [preview, setPreview] = useState<ReturnType<typeof parseCSV> | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
 
@@ -55,11 +55,11 @@ export default function BulkUploadDialog({ open, onClose, onSaved }: Props) {
     if (!file) return;
     setParseError(null);
     setPreview(null);
+    setFileName(file.name);
     const reader = new FileReader();
     reader.onload = (ev) => {
       try {
-        const rows = parseCSV(ev.target?.result as string);
-        setPreview(rows);
+        setPreview(parseCSV(ev.target?.result as string));
       } catch (err: unknown) {
         setParseError(err instanceof Error ? err.message : "Invalid CSV");
       }
@@ -95,35 +95,87 @@ export default function BulkUploadDialog({ open, onClose, onSaved }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Bulk Upload Items via CSV</DialogTitle>
+      <DialogContent className="p-5 overflow-hidden">
+        <DialogHeader className="px-6 pt-6 pb-4 border-b border-border/50 bg-gradient-to-r from-primary/5 to-transparent">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center">
+              <Upload className="w-5 h-5 text-primary" />
+            </div>
+            <div>
+              <DialogTitle className="text-lg font-bold">Bulk Upload Items</DialogTitle>
+              <p className="text-xs text-muted-foreground mt-0.5">Import multiple items at once via CSV</p>
+            </div>
+          </div>
         </DialogHeader>
-        <div className="space-y-4 mt-2">
-          <Button variant="outline" size="sm" onClick={downloadTemplate} className="gap-2">
-            <Download className="w-4 h-4" /> Download Template
-          </Button>
-          <Input type="file" accept=".csv,text/csv" onChange={handleFile} />
-          {parseError && <p className="text-sm text-destructive">{parseError}</p>}
+
+        <div className="px-6 py-5 space-y-5">
+          {/* Template download */}
+          <div className="flex items-center justify-between rounded-xl border border-dashed border-border bg-muted/20 px-4 py-3">
+            <div className="flex items-center gap-2.5">
+              <FileText className="w-4 h-4 text-muted-foreground" />
+              <div>
+                <p className="text-sm font-medium">Need a template?</p>
+                <p className="text-xs text-muted-foreground">Download the CSV format</p>
+              </div>
+            </div>
+            <Button variant="outline" size="sm" onClick={downloadTemplate} className="gap-1.5 shrink-0">
+              <Download className="w-3.5 h-3.5" /> Download
+            </Button>
+          </div>
+
+          {/* File upload */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Upload CSV File</label>
+            <label
+              htmlFor="csv_file"
+              className="flex items-center gap-3 h-11 w-full rounded-xl border border-dashed border-input bg-background/60 px-3.5 cursor-pointer hover:border-primary/40 hover:bg-background transition-all text-sm text-muted-foreground"
+            >
+              <Upload className="w-4 h-4 shrink-0" />
+              <span className="truncate">{fileName ?? "Click to select .csv file..."}</span>
+              <input id="csv_file" type="file" accept=".csv,text/csv" onChange={handleFile} className="hidden" />
+            </label>
+            {parseError && (
+              <p className="text-xs text-destructive bg-destructive/10 rounded-lg px-3 py-2 mt-1">{parseError}</p>
+            )}
+          </div>
+
+          {/* Preview */}
           {preview && (
-            <div className="text-sm space-y-1">
-              <p className="text-muted-foreground">{preview.length} rows ready to import:</p>
-              <div className="max-h-48 overflow-y-auto border rounded p-2 space-y-1">
-                {preview.map((row, i) => (
-                  <div key={i} className="flex gap-4 text-xs">
-                    <span className="font-medium w-32 truncate">{row.name}</span>
-                    <span>Qty: {row.quantity}</span>
-                    <span>Price: {row.price}</span>
-                    {row.barcode_number && <span className="text-muted-foreground">{row.barcode_number}</span>}
-                  </div>
-                ))}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                <p className="text-sm font-medium text-emerald-600 dark:text-emerald-400">{preview.length} rows ready to import</p>
+              </div>
+              <div className="max-h-44 overflow-y-auto rounded-xl border border-border/60 bg-muted/20">
+                <table className="w-full text-xs">
+                  <thead className="sticky top-0 bg-muted/60">
+                    <tr>
+                      <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Name</th>
+                      <th className="text-right px-3 py-2 font-semibold text-muted-foreground">Qty</th>
+                      <th className="text-right px-3 py-2 font-semibold text-muted-foreground">Price</th>
+                      <th className="text-right px-3 py-2 font-semibold text-muted-foreground hidden sm:table-cell">Barcode</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {preview.map((row, i) => (
+                      <tr key={i} className="border-t border-border/40">
+                        <td className="px-3 py-1.5 font-medium truncate max-w-[140px]">{row.name}</td>
+                        <td className="px-3 py-1.5 text-right">{row.quantity}</td>
+                        <td className="px-3 py-1.5 text-right">Rs {row.price}</td>
+                        <td className="px-3 py-1.5 text-right text-muted-foreground font-mono hidden sm:table-cell">{row.barcode_number ?? "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           )}
-          <div className="flex gap-2 justify-end">
-            <Button variant="outline" onClick={onClose}>Cancel</Button>
-            <Button onClick={handleUpload} disabled={!preview || loading}>
-              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : `Import ${preview?.length ?? 0} Items`}
+
+          <div className="flex gap-3 justify-end pt-1">
+            <Button variant="outline" onClick={onClose} className="px-6">Cancel</Button>
+            <Button onClick={handleUpload} disabled={!preview || loading} className="px-6 gap-2">
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+              Import {preview ? `${preview.length} Items` : ""}
             </Button>
           </div>
         </div>

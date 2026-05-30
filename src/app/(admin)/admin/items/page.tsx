@@ -6,7 +6,7 @@ export const metadata: Metadata = { title: "Items | AI Sales" };
 export default function AdminItemsPage() {
   return (
     <div>
-      <h1 className="text-2xl font-semibold mb-6">Items</h1>
+      <h1 className="text-xl sm:text-2xl font-semibold mb-4">Items</h1>
       <ItemsTable />
     </div>
   );

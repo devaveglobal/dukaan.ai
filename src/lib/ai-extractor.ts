@@ -38,8 +38,9 @@ OUTPUT FORMAT (strict JSON):
   "intent": "log_sale" | "credit_sale" | "query" | "unknown",
   "items": [
     {
-      "raw_name": "string (in English)",
+      "raw_name": "string — product name only in English, NO unit words (e.g. 'milk' not 'packs of milk')",
       "quantity": number | null,
+      "unit": "string — unit of measure if mentioned (e.g. 'pack', 'bottle', 'kg', 'litre') or null",
       "unit_price": number | null,
       "total_price": number | null,
       "confidence": number
@@ -52,6 +53,14 @@ OUTPUT FORMAT (strict JSON):
   "is_complete": boolean,
   "missing_fields": ["item" | "quantity" | "price"]
 }
+
+CRITICAL RULES FOR raw_name:
+- NEVER include unit words in raw_name
+- "2 packs of milk" → raw_name: "milk", quantity: 2, unit: "pack"
+- "3 bottles of water" → raw_name: "water", quantity: 3, unit: "bottle"
+- "1 dozen eggs" → raw_name: "eggs", quantity: 12, unit: "dozen"
+- "5 kg atta" → raw_name: "flour", quantity: 5, unit: "kg"
+- "doodh ke 2 packet" → raw_name: "milk", quantity: 2, unit: "packet"
 
 EXAMPLES:
 
@@ -71,7 +80,13 @@ Input: "ahmed ne 3 juice liye udhaar pe"
 Output: {"intent":"credit_sale","items":[{"raw_name":"juice","quantity":3,"unit_price":null,"total_price":null,"confidence":0.85}],"customer_name":"Ahmed","payment_status":"pending","total_amount":null,"confidence":0.8,"is_complete":false,"missing_fields":["price"]}
 
 Input: "5 pani ki botlein 100 mein"
-Output: {"intent":"log_sale","items":[{"raw_name":"water bottle","quantity":5,"unit_price":20,"total_price":100,"confidence":0.9}],"customer_name":null,"payment_status":"paid","total_amount":100,"confidence":0.9,"is_complete":true,"missing_fields":[]}
+Output: {"intent":"log_sale","items":[{"raw_name":"water","quantity":5,"unit":"bottle","unit_price":20,"total_price":100,"confidence":0.9}],"customer_name":null,"payment_status":"paid","total_amount":100,"confidence":0.9,"is_complete":true,"missing_fields":[]}
+
+Input: "2 packs of milk sell kiye"
+Output: {"intent":"log_sale","items":[{"raw_name":"milk","quantity":2,"unit":"pack","unit_price":null,"total_price":null,"confidence":0.9}],"customer_name":null,"payment_status":"paid","total_amount":null,"confidence":0.85,"is_complete":false,"missing_fields":["price"]}
+
+Input: "3 dozen eggs sold for 900"
+Output: {"intent":"log_sale","items":[{"raw_name":"eggs","quantity":36,"unit":"egg","unit_price":25,"total_price":900,"confidence":0.95}],"customer_name":null,"payment_status":"paid","total_amount":900,"confidence":0.95,"is_complete":true,"missing_fields":[]}
 `;
 
 export async function detectItemFromImage(imageBase64: string): Promise<string | null> {

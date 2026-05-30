@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { ExtractedSaleData, Sale, PendingPayment } from "@/types";
 import { matchProducts } from "@/lib/product-matcher";
+import { notifyAdmins } from "@/actions/notifications";
 
 export interface PersistResult {
   sale?: Sale;
@@ -49,8 +50,8 @@ export async function persistSale(
   const resolvedItems = validItems.map((item) => {
     const match = matchMap.get(item.raw_name);
 
-    // Score < 0.3 means genuinely not in catalog (not a language/typo issue)
-    if (!match || match.score < 0.3) {
+    // Score < 0.1 means genuinely not in catalog
+    if (!match || match.score < 0.1) {
       unmatched.push(item.raw_name);
       return { ...item, matched_item_id: null, matched_item_name: null };
     }
@@ -150,13 +151,34 @@ export async function persistSale(
     pending_payment = pp ?? undefined;
   }
 
-  // Deduct stock — fire and forget
-  for (const item of resolvedItems) {
-    if (item.matched_item_id && item.quantity) {
-      void supabase.rpc("decrement_stock", {
-        p_item_id: item.matched_item_id,
-        p_quantity: item.quantity,
-      });
+  // Deduct stock — use the actual quantity saved in sale_items (defaults to 1 if not provided)
+  for (let i = 0; i < resolvedItems.length; i++) {
+    const item = resolvedItems[i];
+    const savedQty = saleItemRows[i].quantity;
+    if (item.matched_item_id) {
+      // Use async IIFE to properly execute the RPC and check threshold
+      ;(async () => {
+        await supabase.rpc("decrement_stock", {
+          p_item_id: item.matched_item_id!,
+          p_quantity: savedQty,
+        });
+        const { data: updated } = await supabase
+          .from("items")
+          .select("name, quantity, low_stock_threshold")
+          .eq("id", item.matched_item_id!)
+          .single();
+        if (
+          updated &&
+          updated.low_stock_threshold != null &&
+          updated.quantity <= updated.low_stock_threshold
+        ) {
+          await notifyAdmins({
+            title: "⚠️ Low Stock Alert",
+            body: `${updated.name} is running low — only ${updated.quantity} left`,
+            data: { type: "low_stock", item_id: item.matched_item_id! },
+          });
+        }
+      })();
     }
   }
 
